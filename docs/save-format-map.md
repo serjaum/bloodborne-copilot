@@ -70,17 +70,17 @@ A community editor models inventory entries as **16-byte slots** and classifies 
 
 | Region/data | Community-researched location/structure | Status | Possible contents |
 |---|---|---:|---|
-| Carried inventory | Starts at `I`; records have a 16-byte stride | **B** | Consumables, materials, key items, chalices, right/left-hand weapons, and armor. IDs and quantities are in the records. |
-| Key inventory | `U + 32,201`; candidate region size 2,204 bytes | **B** | Key items. Boundaries and empty-slot handling need confirmation across versions. |
-| Storage box | `I + 34,268` (equivalent to `U + 34,737`); 16-byte stride | **B** | Stored items, separate from carried inventory. A community editor reserves up to 1,984 entries; this is not an official or project-validated limit. |
+| Carried inventory | Starts at `I`; records have a 16-byte stride | **A/B (partial extraction)** | The reader emits item and armor marker candidates with raw IDs/fields. Weapons and unclassified records are omitted; names are unresolved. |
+| Key inventory | `U + 32,201`; candidate region size 2,204 bytes | **B** | Separate key-item area; not yet scanned by the project reader. |
+| Storage box | `I + 34,268` (equivalent to `U + 34,737`); 16-byte stride | **A/B (partial extraction)** | The reader emits item and armor marker candidates. A community editor reserves up to 1,984 entries; this is not an official or project-validated limit. |
 | Inventory counters | `U + 453` and `U + 34,257` | **C** | Counters used by the community editor to track/delimit inventory; semantics are not independently confirmed. |
 | Storage counters | `U + 34,737` and `U + 68,541` | **C** | Community-editor candidates. The first listed counter coincides with the candidate storage start, so do not treat it as an independently confirmed counter. |
 | Upgrade/gem/rune region | Candidate start near `F + 84`; community editor parses records of 40 bytes | **B/C** | Community parser classifies Blood Gems and Caryll Runes and reads IDs, types, and properties. Region boundaries are pattern-detected and need validation in this project. |
 | Socketed gems | Community editor describes 60-byte equipment blocks: identifier, article ID, durability/auxiliary fields, then five shape+gem-ID pairs | **B** | May associate a weapon/equipment item with socketed gems; not all auxiliary fields are understood. |
 | Gem-slot shapes | Community values: closed, radial, triangle, waning, circle, and droplet | **B** | Codes are recorded by the editor; verify against local samples before using in gameplay advice. |
-| Weapons | Article ID, category, durability, sockets; editor interprets `second_part` as fortification level and imprint | **B** | Includes right/left-hand categories. Normal/Uncanny/Lost imprint and +0…+10 upgrade level are community interpretations. |
-| Armor | Records classified as Armor by the editor, with IDs/quantities | **B** | IDs need a game-resource table to resolve names. |
-| Items and quantities | IDs and quantities in inventory/storage records | **B** | Consumables, materials, key items, and chalices; not read by the local prototype. |
+| Weapons | Article ID, category, durability, sockets; editor interprets `second_part` as fortification level and imprint | **B; not yet extracted by this project** | Includes right/left-hand categories. Normal/Uncanny/Lost imprint and +0…+10 upgrade level are community interpretations. |
+| Armor | Records classified as Armor by the editor, with IDs/quantities | **A/B (raw candidates)** | The reader extracts marker-matched records but does not resolve armor names. |
+| Items and quantities | IDs and quantities in inventory/storage records | **A/B (raw candidates)** | The reader extracts marker-matched entries and raw quantity/value fields; consumable/material/key/chalice names are unresolved. |
 | ISZ-glitch-related bytes | `U + 72,082` in a community editor | **C** | Auxiliary field mentioned by the editor; not used by the copilot. |
 
 ### 3.4 Progress and bosses
@@ -141,9 +141,10 @@ Implemented in `tools/bloodborne_save_reader/save_reader.py` (read-only):
 - raw death counter;
 - raw X/Y/Z coordinates;
 - raw map ID and playtime;
+- item and armor candidates from carried inventory/storage, with slot metadata, raw IDs/record parts, raw quantity/value, and raw bytes; names and weapon records are not resolved;
 - explicit field notes for values that are not decoded.
 
-**Not yet implemented in this reader:** carried inventory/storage, item names and counts, weapons/upgrade levels/imprints, armor, gems/runes/sockets, appearance, gender/voice/origin, NG cycle, named areas, playtime units, quest/NPC flags, and chalice data.
+**Not yet implemented in this reader:** weapon records, item-name lookup, key-inventory parsing, upgrades/imprints, gems/runes/sockets, appearance, gender/voice/origin, NG cycle, named areas, playtime units, quest/NPC flags, and chalice data.
 
 ## 5. Limits: a save is not real-time telemetry
 

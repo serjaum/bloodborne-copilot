@@ -10,7 +10,7 @@ The first tool reads a Bloodborne `userdata000X` file and prints a JSON summary.
 python -m tools.bloodborne_save_reader.save_reader "C:\path\to\userdata0000"
 ```
 
-Currently reports the character name, level, attributes, Blood Echoes, Insight, health, stamina, best-effort boss flags, raw death count, and raw world coordinates. The raw map and playtime values are included but are **not yet decoded or validated**. Boss flags were compared with the bbport trophy log for this local save; that is a cross-check, not a formal format guarantee. The layout is community reverse-engineered, not an official format; unsupported or ambiguous saves are rejected rather than edited.
+Currently reports the character name, level, six attributes, Blood Echoes, Insight, health/stamina, best-effort boss flags, raw death count, raw world coordinates, raw map ID/playtime, and raw item/armor candidates found in carried inventory/storage. Inventory IDs and quantities are not name-resolved; weapon and unclassified records are omitted. See the [tool README](tools/bloodborne_save_reader/README.md) and [save format map](docs/save-format-map.md) for coverage, confidence, and limitations. The layout is community reverse-engineered, not an official format; unsupported or ambiguous saves are rejected rather than edited.
 
 A local test copy, if present, belongs under `testdata/private/`. That path is ignored by Git: never commit or upload personal save data.
 

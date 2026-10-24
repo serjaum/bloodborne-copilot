@@ -18,7 +18,9 @@ The reader outputs JSON and never writes to the save. Layout details come from c
 - **Raw/experimental values:** death counter (`death_count_raw`), world coordinates (`position_raw`), loaded map ID (`loaded_map_raw`), and playtime (`playtime_raw`). Coordinates are not mapped to named areas; map IDs and playtime units are not decoded or validated; the death counter has not been checked against the in-game UI.
 - **Safety/diagnostics:** reports that parsing is read-only, the file size, detected inventory-marker count, and field notes for unvalidated values.
 
-Inventory/storage contents, item names and quantities, weapons and upgrades, armor, gems/runes, appearance, NG cycle, named locations, chalice data, and quest/NPC flags are **not yet decoded** by this tool. The project-wide [save format map](../../docs/save-format-map.md) records current offsets, evidence levels, references, and open work.
+The `inventory` object includes `carried` and `storage` arrays. It currently returns only community-marked item and armor candidates. Each entry includes its slot index/number, candidate kind, raw item ID, raw record parts, raw quantity/value, and 16-byte hex record. Weapon candidates, the separate key-item area, and unclassified slots are omitted; item names and equipment details are not resolved.
+
+The reader does **not yet decode** weapon records, item names, upgrades/imprints, gems/runes/sockets, appearance, gender/voice/origin, NG cycle, named areas, playtime units, quest/NPC flags, or chalice data. The project-wide [save format map](../../docs/save-format-map.md) records current offsets, evidence levels, references, and open work.
 
 ## Run tests
 

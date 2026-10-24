@@ -10,6 +10,23 @@ class ParseSaveBytesTests(unittest.TestCase):
         struct.pack_into("<II", data, 4, 0x16, 3600)
         inventory_offset = 2048
         data[inventory_offset:inventory_offset + 4] = bytes.fromhex("40 f0 ff ff")
+        item_offset = inventory_offset + 16
+        item_record = bytearray(16)
+        item_record[0] = 5
+        item_record[4:8] = bytes.fromhex("34 12 00 b0")
+        item_record[8:12] = bytes.fromhex("34 12 00 40")
+        struct.pack_into("<I", item_record, 12, 7)
+        data[item_offset:item_offset + 16] = item_record
+        data[inventory_offset + 32:inventory_offset + 48] = bytes.fromhex(
+            "01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10"
+        )  # unclassified record is not reported
+        storage_offset = inventory_offset + 34268
+        armor_record = bytearray(16)
+        armor_record[0] = 9
+        armor_record[4:8] = bytes.fromhex("78 56 00 90")
+        armor_record[8:12] = bytes.fromhex("78 56 00 10")
+        struct.pack_into("<I", armor_record, 12, 1)
+        data[storage_offset + 2 * 16:storage_offset + 3 * 16] = armor_record
         aob_offset = 100
         data[aob_offset:aob_offset + 8] = bytes.fromhex("03 00 00 00 05 00 01 00")
         data[aob_offset + 21714] = 0x0F  # community pattern: Cleric Beast defeated bit
@@ -53,6 +70,32 @@ class ParseSaveBytesTests(unittest.TestCase):
         self.assertTrue(summary["bosses"]["Cleric Beast"])
         self.assertFalse(summary["bosses"]["Father Gascoigne"])
         self.assertEqual(summary["death_count_raw"], 64)
+        self.assertEqual(
+            summary["inventory"]["carried"],
+            [{
+                "slot_index": 1,
+                "slot_number_raw": 5,
+                "kind_candidate": "item",
+                "item_id_raw": 0x1234,
+                "first_part_raw": 0xB0001234,
+                "second_part_raw": 0x40001234,
+                "quantity_raw": 7,
+                "record_hex": "05 00 00 00 34 12 00 b0 34 12 00 40 07 00 00 00",
+            }],
+        )
+        self.assertEqual(
+            summary["inventory"]["storage"],
+            [{
+                "slot_index": 2,
+                "slot_number_raw": 9,
+                "kind_candidate": "armor",
+                "item_id_raw": 0x5678,
+                "first_part_raw": 0x90005678,
+                "second_part_raw": 0x10005678,
+                "quantity_raw": 1,
+                "record_hex": "09 00 00 00 78 56 00 90 78 56 00 10 01 00 00 00",
+            }],
+        )
 
     def test_rejects_data_without_bloodborne_inventory_signature(self):
         with self.assertRaisesRegex(ValueError, "Bloodborne inventory signature"):

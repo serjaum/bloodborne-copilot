@@ -24,6 +24,10 @@ STAT_OFFSETS = {
 AOB_SIGNATURE = bytes.fromhex("03 00 00 00 05 00 01 00")
 LCED_SIGNATURE = b"LCED"
 COORDINATE_MARKER = bytes.fromhex("ff ff ff ff 00 00 00 00 00 00 00 00")
+INVENTORY_SLOT_SIZE = 16
+CARRIED_INVENTORY_SLOT_COUNT = 1983
+STORAGE_OFFSET_FROM_INVENTORY = 34268
+STORAGE_SLOT_COUNT = 1984
 BOSS_FLAGS = {
     "Cleric Beast": (21714, 0x08),
     "Father Gascoigne": (21727, 0x80),
@@ -127,7 +131,56 @@ def _candidate(data: bytes, inventory_offset: int) -> dict[str, Any]:
     }
 
 
+def _parse_marked_inventory_slots(data: bytes, start: int, slot_count: int) -> list[dict[str, Any]]:
+    end = start + slot_count * INVENTORY_SLOT_SIZE
+    if start < 0 or end > len(data):
+        raise ValueError("Save is too short for the detected inventory layout")
+
+    entries: list[dict[str, Any]] = []
+    for slot_index in range(slot_count):
+        offset = start + slot_index * INVENTORY_SLOT_SIZE
+        record = data[offset:offset + INVENTORY_SLOT_SIZE]
+        if len(record) != INVENTORY_SLOT_SIZE:
+            raise ValueError("Truncated inventory slot")
+
+        if record[7] == 0xB0 and record[11] == 0x40:
+            kind = "item"
+        elif record[11] == 0x10:
+            kind = "armor"
+        else:
+            continue
+
+        item_id = int.from_bytes(record[8:11] + b"\x00", "little")
+        if item_id == 0:
+            continue
+
+        entries.append({
+            "slot_index": slot_index,
+            "slot_number_raw": record[0],
+            "kind_candidate": kind,
+            "item_id_raw": item_id,
+            "first_part_raw": _u32(data, offset + 4),
+            "second_part_raw": _u32(data, offset + 8),
+            "quantity_raw": _u32(data, offset + 12),
+            "record_hex": " ".join(f"{byte:02x}" for byte in record),
+        })
+    return entries
+
+
+def _parse_inventory(data: bytes, inventory_offset: int) -> dict[str, list[dict[str, Any]]]:
+    storage_offset = inventory_offset + STORAGE_OFFSET_FROM_INVENTORY
+    return {
+        "carried": _parse_marked_inventory_slots(
+            data, inventory_offset, CARRIED_INVENTORY_SLOT_COUNT
+        ),
+        "storage": _parse_marked_inventory_slots(
+            data, storage_offset, STORAGE_SLOT_COUNT
+        ),
+    }
+
+
 def parse_save_bytes(data: bytes) -> dict[str, Any]:
+
     """Parse a conservative summary from a Bloodborne userdata file.
 
     The reader uses the first community-documented inventory marker, then checks
@@ -169,8 +222,10 @@ def parse_save_bytes(data: bytes) -> dict[str, Any]:
         "file_size": len(data),
         "inventory_markers_found": len(offsets),
         **first,
+        "inventory": _parse_inventory(data, first["inventory_signature_offset"]),
         **_community_extras(data),
         "field_notes": {
+            "inventory": "Only community-marked item and armor records are returned. Weapon candidates and unclassified records are omitted; IDs remain raw and names are not resolved.",
             "loaded_map_raw": "Raw value only; map-name mapping is not yet implemented.",
             "playtime_raw": "Raw value only; units are not yet validated.",
             "bosses": "Best-effort interpretation of community-researched flags; verify against in-game trophies.",
