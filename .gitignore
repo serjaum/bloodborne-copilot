@@ -1,0 +1,6 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Personal save-data fixtures: never commit game saves.
+testdata/private/
