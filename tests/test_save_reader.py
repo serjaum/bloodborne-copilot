@@ -10,6 +10,17 @@ class ParseSaveBytesTests(unittest.TestCase):
         struct.pack_into("<II", data, 4, 0x16, 3600)
         inventory_offset = 2048
         data[inventory_offset:inventory_offset + 4] = bytes.fromhex("40 f0 ff ff")
+        aob_offset = 100
+        data[aob_offset:aob_offset + 8] = bytes.fromhex("03 00 00 00 05 00 01 00")
+        data[aob_offset + 21714] = 0x0F  # community pattern: Cleric Beast defeated bit
+        data[aob_offset + 21727] = 0x00  # Father Gascoigne not defeated
+        struct.pack_into("<I", data, aob_offset + 360, 64)
+        lced_offset = 512
+        data[lced_offset:lced_offset + 4] = b"LCED"
+        marker = bytes.fromhex("ff ff ff ff 00 00 00 00 00 00 00 00")
+        marker_offset = 1024
+        data[marker_offset:marker_offset + len(marker)] = marker
+        struct.pack_into("<fff", data, marker_offset + 12, -177.5, -23.0, 485.25)
         username_offset = inventory_offset - 469
         data[username_offset + 1:username_offset + 27] = "Hunter Alpha".encode("utf-16le") + b"\0\0"
         for name, distance, value in (
@@ -38,6 +49,10 @@ class ParseSaveBytesTests(unittest.TestCase):
         self.assertEqual(summary["playtime_raw"], 3600)
         self.assertEqual(summary["health"], {"current": 880, "max": 1100})
         self.assertEqual(summary["stamina"], {"current": 100, "max": 120})
+        self.assertEqual(summary["position_raw"], {"x": -177.5, "y": -23.0, "z": 485.25})
+        self.assertTrue(summary["bosses"]["Cleric Beast"])
+        self.assertFalse(summary["bosses"]["Father Gascoigne"])
+        self.assertEqual(summary["death_count_raw"], 64)
 
     def test_rejects_data_without_bloodborne_inventory_signature(self):
         with self.assertRaisesRegex(ValueError, "Bloodborne inventory signature"):
