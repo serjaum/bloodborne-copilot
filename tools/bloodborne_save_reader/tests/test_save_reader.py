@@ -1,7 +1,7 @@
 import struct
 import unittest
 
-from src.save_reader import parse_save_bytes
+from tools.bloodborne_save_reader.save_reader import parse_save_bytes
 
 
 class ParseSaveBytesTests(unittest.TestCase):

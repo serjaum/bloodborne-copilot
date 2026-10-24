@@ -7,7 +7,7 @@ Read-only, second-screen AI companion for Bloodborne on Windows (bbport).
 The first tool reads a Bloodborne `userdata000X` file and prints a JSON summary. It does not modify the input file.
 
 ```powershell
-python -m src.save_reader "C:\path\to\userdata0000"
+python -m tools.bloodborne_save_reader.save_reader "C:\path\to\userdata0000"
 ```
 
 Currently reports the character name, level, attributes, Blood Echoes, Insight, health, stamina, best-effort boss flags, raw death count, and raw world coordinates. The raw map and playtime values are included but are **not yet decoded or validated**. Boss flags were compared with the bbport trophy log for this local save; that is a cross-check, not a formal format guarantee. The layout is community reverse-engineered, not an official format; unsupported or ambiguous saves are rejected rather than edited.
@@ -17,7 +17,7 @@ A local test copy, if present, belongs under `testdata/private/`. That path is i
 ## Tests
 
 ```powershell
-python -m unittest discover -v
+python -m unittest discover -s tools/bloodborne_save_reader/tests -v
 ```
 
 ## Format reference
