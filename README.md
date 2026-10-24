@@ -22,4 +22,4 @@ python -m unittest discover -s tools/bloodborne_save_reader/tests -v
 
 ## Format reference
 
-The initial offsets are based on the community [Bloodborne ImHex pattern](https://github.com/WerWolv/ImHex-Patterns/blob/master/patterns/bloodborne_save.hexpat). Treat all parsed data as best-effort until validated against more save versions.
+The [save format map](docs/save-format-map.md) is the project’s living index of fields, offsets, evidence levels and unknowns. The initial offsets are based on the community [Bloodborne ImHex pattern](https://github.com/WerWolv/ImHex-Patterns/blob/master/patterns/bloodborne_save.hexpat). Treat all parsed data as best-effort until validated against more save versions.
