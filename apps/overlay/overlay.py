@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import queue
 import threading
 import tkinter as tk
@@ -16,6 +17,7 @@ from apps.overlay.chat_client import (
     ProviderSettings,
     build_system_prompt,
 )
+from apps.overlay.settings_store import SettingsStore, SettingsStoreError
 from apps.overlay.snapshot import build_snapshot
 from apps.overlay.window_modes import WINDOW_MODES
 from tools.bloodborne_save_reader.save_reader import inspect_save
@@ -36,7 +38,25 @@ class CopilotOverlay:
         self.pinned = True
         self.running = True
         self.drag_origin: tuple[int, int, int, int] | None = None
-        self.settings = ProviderSettings.from_environment()
+        self.settings_store = SettingsStore()
+        self.settings_load_error = False
+        try:
+            saved_settings = self.settings_store.load()
+        except SettingsStoreError:
+            saved_settings = {}
+            self.settings_load_error = True
+        environment_settings = ProviderSettings.from_environment()
+        self.settings = ProviderSettings(
+            base_url=os.environ.get(
+                "OPENAI_BASE_URL", saved_settings.get("base_url", environment_settings.base_url)
+            ).strip(),
+            model=os.environ.get(
+                "OPENAI_MODEL", saved_settings.get("model", environment_settings.model)
+            ).strip(),
+            api_key=os.environ.get(
+                "OPENAI_API_KEY", saved_settings.get("api_key", environment_settings.api_key)
+            ).strip(),
+        )
         self.snapshot: dict[str, str] | None = None
         self.snapshot_filename = ""
         self.history: list[dict[str, str]] = []
@@ -55,6 +75,8 @@ class CopilotOverlay:
         self._build_full_view()
         self.show_compact()
         self.root.after(120, self._poll_results)
+        if self.settings_load_error:
+            self._set_all_status("Saved provider settings could not be decrypted; enter them again")
 
     def _build_compact_view(self) -> None:
         frame = tk.Frame(self.root, bg=COLORS["background"], bd=1, relief="solid")
@@ -379,13 +401,15 @@ class CopilotOverlay:
             "combo": model_combo,
             "status": model_status,
             "button": load_models_button,
+            "fields": fields,
         }
 
         tk.Label(
             body,
             text=(
-                "The key stays in memory for this run only. Model discovery uses the provider's "
-                "GET /models endpoint; some compatible services may not implement it."
+                "The API key is saved encrypted for this Windows user and restored when the app reopens. "
+                "Model discovery uses the provider's GET /models endpoint; some compatible services "
+                "may not implement it."
             ),
             bg=COLORS["background"], fg=COLORS["dim"], font=("Segoe UI", 8),
             justify="left", wraplength=500, anchor="w",
@@ -409,6 +433,17 @@ class CopilotOverlay:
             if not model:
                 model_status.set("Enter a model name in Settings")
                 return
+            try:
+                self.settings_store.save({
+                    "provider": "openai",
+                    "base_url": base_url,
+                    "model": model,
+                    "api_key": api_key,
+                })
+            except SettingsStoreError:
+                model_status.set("Could not save encrypted settings; changes were not applied")
+                return
+            self.settings_load_error = False
             self.settings = ProviderSettings(base_url=base_url, model=model, api_key=api_key)
             self.compact_provider.configure(text=self._provider_status())
             self._set_all_status(self._provider_status())
@@ -417,9 +452,12 @@ class CopilotOverlay:
         self._button(actions, "CANCEL", close_dialog, bg=COLORS["panel_alt"]).pack(
             side="right", padx=(6, 0)
         )
-        self._button(actions, "APPLY FOR THIS SESSION", apply_settings, bg=COLORS["accent"]).pack(
-            side="right"
+        save_settings_button = self._button(
+            actions, "SAVE SETTINGS", apply_settings, bg=COLORS["accent"]
         )
+        save_settings_button.pack(side="right")
+        if self.model_lookup_ui:
+            self.model_lookup_ui["save_button"] = save_settings_button
 
     def _start_model_lookup(
         self,

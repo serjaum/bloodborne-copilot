@@ -41,7 +41,7 @@ Alternatively, set these environment variables before launching:
 - `OPENAI_BASE_URL` (defaults to `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
 
-The API key field is masked. A key entered in Settings remains in memory for the current run only and is not saved to disk or the repository. Chat history is also session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint references: [List models](https://developers.openai.com/api/reference/resources/models/methods/list/) and [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
+The API key field is masked. On Windows, **SAVE SETTINGS** stores the API key encrypted with DPAPI for the current Windows user in `%LOCALAPPDATA%\BloodborneCopilot\settings.json`; it is restored when the app reopens and is not written in plaintext. Chat history is still session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint references: [List models](https://developers.openai.com/api/reference/resources/models/methods/list/) and [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
 
 ## Snapshot and limitations
 
