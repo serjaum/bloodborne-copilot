@@ -11,11 +11,11 @@ class ProviderPresetTests(unittest.TestCase):
         self.assertEqual(PROVIDERS["opencode_go"].label, "OpenCode Go")
         self.assertEqual(
             PROVIDERS["opencode_go"].base_url,
-            "https://opencode.ai/inference/go/openai/v1",
+            "https://opencode.ai/zen/go/v1",
         )
         self.assertEqual(
             PROVIDERS["opencode_go"].models_url,
-            "https://opencode.ai/inference/go/v1/models",
+            "https://opencode.ai/zen/go/v1/models",
         )
         self.assertEqual(PROVIDERS["opencode_go"].default_model, "glm-5.3")
         self.assertIn("glm-5.3", PROVIDERS["opencode_go"].chat_models or ())

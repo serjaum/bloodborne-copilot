@@ -605,8 +605,18 @@ class CopilotOverlay:
         provider_id: str,
     ) -> None:
         try:
+            headers = {}
+            if provider_id == "opencode_go":
+                headers = {
+                    "User-Agent": "BloodborneCopilot/0.1",
+                    "X-OpenCode-Session": self.conversation_id,
+                }
             client = OpenAICompatibleClient(
-                base_url, "", api_key, models_url=models_url
+                base_url,
+                "",
+                api_key,
+                models_url=models_url,
+                extra_headers=headers,
             )
             models = filter_models_for_provider(provider_id, client.list_models())
             self.model_result_queue.put((models, None))

@@ -63,7 +63,7 @@ class OpenAICompatibleClientTests(unittest.TestCase):
             settings = ProviderSettings.from_environment()
 
         self.assertEqual(settings.provider, "opencode_go")
-        self.assertEqual(settings.base_url, "https://opencode.ai/inference/go/openai/v1")
+        self.assertEqual(settings.base_url, "https://opencode.ai/zen/go/v1")
         self.assertEqual(settings.model, "kimi-k3")
         self.assertEqual(settings.api_key, "opencode-go-test-key")
 
@@ -116,6 +116,39 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         self.assertEqual(_TestHandler.opencode_session, "stable-session-id")
         self.assertEqual(_TestHandler.user_agent, "BloodborneCopilot/0.1")
 
+    def test_surfaces_provider_error_message_from_non_openai_error_schema(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.dumps({
+                    "type": "NotAuthenticated",
+                    "message": "OpenCode Go key is invalid or inactive",
+                }).encode()
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        client = OpenAICompatibleClient(
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            model="glm-5.3",
+            api_key="local-invalid-test-key",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "HTTP 403.*NotAuthenticated.*invalid or inactive",
+        ):
+            client.complete([{"role": "user", "content": "Test"}])
+
     def test_lists_model_ids_from_configured_compatible_endpoint(self):
         _TestHandler.request_path = None
         _TestHandler.authorization = None
@@ -144,9 +177,9 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        models_url = f"http://127.0.0.1:{server.server_port}/inference/go/v1/models"
+        models_url = f"http://127.0.0.1:{server.server_port}/zen/go/v1/models"
         client = OpenAICompatibleClient(
-            base_url=f"http://127.0.0.1:{server.server_port}/inference/go/openai/v1",
+            base_url=f"http://127.0.0.1:{server.server_port}/zen/go/v1",
             model="glm-5.3",
             api_key="local-test-key",
             models_url=models_url,
@@ -154,7 +187,7 @@ class OpenAICompatibleClientTests(unittest.TestCase):
 
         client.list_models()
 
-        self.assertEqual(_TestHandler.request_path, "/inference/go/v1/models")
+        self.assertEqual(_TestHandler.request_path, "/zen/go/v1/models")
 
 
 if __name__ == "__main__":

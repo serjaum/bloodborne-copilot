@@ -59,6 +59,26 @@ class ProviderSettings:
         )
 
 
+def _format_http_error(exc: HTTPError) -> str:
+    try:
+        raw_body = exc.read()
+    finally:
+        exc.close()
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    nested = payload.get("error")
+    nested = nested if isinstance(nested, dict) else {}
+    error_type = payload.get("type") or nested.get("type") or payload.get("code")
+    message = payload.get("message") or nested.get("message") or payload.get("detail")
+    detail_parts = [str(part) for part in (error_type, message) if part]
+    suffix = f": {' — '.join(detail_parts)}" if detail_parts else ""
+    return f"Provider returned HTTP {exc.code}{suffix}"
+
+
 class OpenAICompatibleClient:
     def __init__(
         self,
@@ -97,14 +117,7 @@ class OpenAICompatibleClient:
             with urlopen(request, timeout=self.timeout) as response:
                 payload: Any = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            detail = ""
-            try:
-                error_payload = json.loads(exc.read().decode("utf-8"))
-                detail = str(error_payload.get("error", {}).get("message", ""))
-            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-                pass
-            suffix = f": {detail}" if detail else ""
-            raise RuntimeError(f"Provider returned HTTP {exc.code}{suffix}") from None
+            raise RuntimeError(_format_http_error(exc)) from None
         except URLError as exc:
             raise RuntimeError(f"Could not reach provider: {exc.reason}") from None
         except TimeoutError:
@@ -132,7 +145,7 @@ class OpenAICompatibleClient:
             if self.base_url.endswith("/models")
             else f"{self.base_url}/models"
         )
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", **self.extra_headers}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request = Request(endpoint, headers=headers, method="GET")
@@ -141,14 +154,7 @@ class OpenAICompatibleClient:
             with urlopen(request, timeout=self.timeout) as response:
                 payload: Any = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            detail = ""
-            try:
-                error_payload = json.loads(exc.read().decode("utf-8"))
-                detail = str(error_payload.get("error", {}).get("message", ""))
-            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-                pass
-            suffix = f": {detail}" if detail else ""
-            raise RuntimeError(f"Provider returned HTTP {exc.code}{suffix}") from None
+            raise RuntimeError(_format_http_error(exc)) from None
         except URLError as exc:
             raise RuntimeError(f"Could not reach provider: {exc.reason}") from None
         except TimeoutError:

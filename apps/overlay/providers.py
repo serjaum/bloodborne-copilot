@@ -35,9 +35,9 @@ PROVIDERS = {
     "opencode_go": ProviderPreset(
         id="opencode_go",
         label="OpenCode Go",
-        base_url="https://opencode.ai/inference/go/openai/v1",
+        base_url="https://opencode.ai/zen/go/v1",
         default_model="glm-5.3",
-        models_url="https://opencode.ai/inference/go/v1/models",
+        models_url="https://opencode.ai/zen/go/v1/models",
         chat_models=OPENCODE_GO_CHAT_MODELS,
     ),
     "custom": ProviderPreset(

@@ -56,7 +56,7 @@ class SettingsStoreTests(unittest.TestCase):
             })
             store.save({
                 "provider": "opencode_go",
-                "base_url": "https://opencode.ai/inference/go/openai/v1",
+                "base_url": "https://opencode.ai/zen/go/v1",
                 "model": "glm-5.3",
                 "api_key": "opencode-test-key",
             })
@@ -81,7 +81,7 @@ class SettingsStoreTests(unittest.TestCase):
 
             store.save({
                 "provider": "opencode_go",
-                "base_url": "https://opencode.ai/inference/go/openai/v1",
+                "base_url": "https://opencode.ai/zen/go/v1",
                 "model": "glm-5.3",
                 "api_key": "opencode-go-key",
                 "api_keys": {
