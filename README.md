@@ -20,7 +20,7 @@ The Windows companion has a translucent, always-on-top compact chat and a regula
 python -m apps.overlay
 ```
 
-See [apps/overlay/README.md](apps/overlay/README.md) for provider setup, API-key handling, quick prompts, and limitations. Personal test saves remain under ignored `testdata/private/`; never commit or upload them.
+See [apps/overlay/README.md](apps/overlay/README.md) for provider setup, API-key handling, available-model discovery, quick prompts, and limitations. Personal test saves remain under ignored `testdata/private/`; never commit or upload them.
 
 ## Tests
 

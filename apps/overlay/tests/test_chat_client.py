@@ -25,6 +25,23 @@ class _TestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response)
 
+    def do_GET(self):
+        type(self).request_path = self.path
+        type(self).authorization = self.headers.get("Authorization")
+        response = json.dumps({
+            "object": "list",
+            "data": [
+                {"id": "model-z"},
+                {"id": "embedding-model"},
+                {"id": "model-a"},
+            ],
+        }).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
     def log_message(self, _format, *_args):
         pass
 
@@ -54,6 +71,27 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         self.assertEqual(_TestHandler.authorization, "Bearer test-key-not-a-real-secret")
         self.assertEqual(_TestHandler.payload["model"], "test-model")
         self.assertEqual(_TestHandler.payload["messages"], messages)
+
+    def test_lists_model_ids_from_configured_compatible_endpoint(self):
+        _TestHandler.request_path = None
+        _TestHandler.authorization = None
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _TestHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        client = OpenAICompatibleClient(
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            model="unused-for-listing",
+            api_key="test-key-not-a-real-secret",
+        )
+
+        models = client.list_models()
+
+        self.assertEqual(models, ["embedding-model", "model-a", "model-z"])
+        self.assertEqual(_TestHandler.request_path, "/v1/models")
+        self.assertEqual(_TestHandler.authorization, "Bearer test-key-not-a-real-secret")
 
 
 if __name__ == "__main__":

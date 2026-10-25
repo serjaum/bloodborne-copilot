@@ -33,7 +33,7 @@ The quick prompts are designed for information the app can actually use: build g
 
 ## AI provider setup
 
-Open **SET** in compact view or **SETTINGS** in full view. The client uses the OpenAI-compatible `POST /chat/completions` endpoint and supports a configurable base URL, model, and API key. The default base URL is `https://api.openai.com/v1`; the model is editable. Compatible services can use their own base URL and model, including local endpoints.
+Open **SET** in compact view or **SETTINGS** in full view. The client uses the OpenAI-compatible `POST /chat/completions` endpoint and supports a configurable base URL, model, and API key. The default base URL is `https://api.openai.com/v1`; the model is editable. Select **LOAD MODELS** after entering the provider URL and key to request its `GET /models` list, then choose an ID or type one manually. Compatible services can use their own base URL and model, including local endpoints, but model-list support is provider-specific. A listed model may not support chat completions.
 
 Alternatively, set these environment variables before launching:
 
@@ -41,7 +41,7 @@ Alternatively, set these environment variables before launching:
 - `OPENAI_BASE_URL` (defaults to `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
 
-The API key field is masked. A key entered in Settings remains in memory for the current run only and is not saved to disk or the repository. Chat history is also session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint reference: [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
+The API key field is masked. A key entered in Settings remains in memory for the current run only and is not saved to disk or the repository. Chat history is also session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint references: [List models](https://developers.openai.com/api/reference/resources/models/methods/list/) and [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
 
 ## Snapshot and limitations
 

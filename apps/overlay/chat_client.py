@@ -104,6 +104,52 @@ class OpenAICompatibleClient:
                 return result
         raise RuntimeError("Provider returned an empty or unsupported chat message")
 
+    def list_models(self) -> list[str]:
+        """Fetch model IDs from the OpenAI-compatible GET /models endpoint."""
+        if not self.base_url.startswith(("https://", "http://")):
+            raise ValueError("Provider URL must start with http:// or https://")
+        endpoint = (
+            self.base_url
+            if self.base_url.endswith("/models")
+            else f"{self.base_url}/models"
+        )
+        headers = {"Accept": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = Request(endpoint, headers=headers, method="GET")
+
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                payload: Any = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = ""
+            try:
+                error_payload = json.loads(exc.read().decode("utf-8"))
+                detail = str(error_payload.get("error", {}).get("message", ""))
+            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                pass
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"Provider returned HTTP {exc.code}{suffix}") from None
+        except URLError as exc:
+            raise RuntimeError(f"Could not reach provider: {exc.reason}") from None
+        except TimeoutError:
+            raise RuntimeError("Provider request timed out") from None
+
+        try:
+            records = payload["data"]
+        except (KeyError, TypeError):
+            raise RuntimeError("Provider response did not contain a model list") from None
+        if not isinstance(records, list):
+            raise RuntimeError("Provider response did not contain a model list")
+        model_ids = {
+            record["id"].strip()
+            for record in records
+            if isinstance(record, dict)
+            and isinstance(record.get("id"), str)
+            and record["id"].strip()
+        }
+        return sorted(model_ids, key=str.casefold)
+
 
 def build_system_prompt(snapshot: dict[str, str] | None = None) -> str:
     prompt = (

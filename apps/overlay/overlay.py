@@ -7,7 +7,7 @@ import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 from typing import Any
 
 from apps.overlay.chat_client import (
@@ -42,6 +42,8 @@ class CopilotOverlay:
         self.history: list[dict[str, str]] = []
         self.busy = False
         self.result_queue: queue.Queue[tuple[str | None, str | None]] = queue.Queue()
+        self.model_result_queue: queue.Queue[tuple[list[str] | None, str | None]] = queue.Queue()
+        self.model_lookup_ui: dict[str, Any] | None = None
         self.chat_widgets: dict[str, dict[str, Any]] = {}
         self.snapshot_labels: dict[str, tk.Label] = {}
         self.mode_frames: dict[str, tk.Frame] = {}
@@ -324,18 +326,18 @@ class CopilotOverlay:
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
-        dialog.geometry("500x360")
+        dialog.geometry("540x450")
         body = tk.Frame(dialog, bg=COLORS["background"], padx=18, pady=16)
         body.pack(fill="both", expand=True)
         tk.Label(
             body, text="OPENAI-COMPATIBLE PROVIDER", bg=COLORS["background"],
             fg=COLORS["text"], font=("Segoe UI", 11, "bold"), anchor="w",
         ).pack(fill="x", pady=(0, 12))
-        fields: dict[str, tk.Entry] = {}
-        for label, key, value, secret in (
-            ("Base URL", "base_url", self.settings.base_url, False),
-            ("Model", "model", self.settings.model, False),
-            ("API key", "api_key", self.settings.api_key, True),
+
+        fields: dict[str, Any] = {}
+        for label, key, value in (
+            ("Base URL", "base_url", self.settings.base_url),
+            ("API key", "api_key", self.settings.api_key),
         ):
             tk.Label(
                 body, text=label, bg=COLORS["background"], fg=COLORS["muted"],
@@ -344,41 +346,131 @@ class CopilotOverlay:
             entry = tk.Entry(
                 body, bg=COLORS["panel_alt"], fg=COLORS["text"],
                 insertbackground=COLORS["text"], relief="flat", font=("Segoe UI", 9),
-                show="*" if secret else "",
+                show="*" if key == "api_key" else "",
             )
             entry.insert(0, value)
             entry.pack(fill="x", ipady=7)
             fields[key] = entry
+
+        model_header = tk.Frame(body, bg=COLORS["background"])
+        model_header.pack(fill="x", pady=(8, 3))
+        tk.Label(
+            model_header, text="Model", bg=COLORS["background"], fg=COLORS["muted"],
+            font=("Segoe UI", 9), anchor="w",
+        ).pack(side="left")
+        model_status = tk.StringVar(value="Load the provider list or type a model ID")
+        load_models_button = self._button(
+            model_header,
+            "LOAD MODELS",
+            lambda: self._start_model_lookup(fields, model_status, load_models_button),
+            bg=COLORS["panel_alt"],
+        )
+        load_models_button.pack(side="right")
+        model_combo = ttk.Combobox(body, state="normal", font=("Segoe UI", 9))
+        model_combo.set(self.settings.model)
+        model_combo.pack(fill="x", ipady=3)
+        fields["model"] = model_combo
+        tk.Label(
+            body, textvariable=model_status, bg=COLORS["background"], fg=COLORS["dim"],
+            font=("Segoe UI", 8), anchor="w",
+        ).pack(fill="x", pady=(3, 0))
+        self.model_lookup_ui = {
+            "dialog": dialog,
+            "combo": model_combo,
+            "status": model_status,
+            "button": load_models_button,
+        }
+
         tk.Label(
             body,
-            text="The key stays in memory for this run only; it is not written to disk or the repository.",
+            text=(
+                "The key stays in memory for this run only. Model discovery uses the provider's "
+                "GET /models endpoint; some compatible services may not implement it."
+            ),
             bg=COLORS["background"], fg=COLORS["dim"], font=("Segoe UI", 8),
-            justify="left", wraplength=450, anchor="w",
+            justify="left", wraplength=500, anchor="w",
         ).pack(fill="x", pady=(10, 12))
         actions = tk.Frame(body, bg=COLORS["background"])
         actions.pack(fill="x", side="bottom")
+
+        def close_dialog() -> None:
+            self.model_lookup_ui = None
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", close_dialog)
 
         def apply_settings() -> None:
             base_url = fields["base_url"].get().strip().rstrip("/")
             model = fields["model"].get().strip()
             api_key = fields["api_key"].get().strip()
             if not base_url.startswith(("https://", "http://")):
-                self._set_all_status("Base URL must start with http:// or https://")
+                model_status.set("Base URL must start with http:// or https://")
                 return
             if not model:
-                self._set_all_status("Enter a model name in Settings")
+                model_status.set("Enter a model name in Settings")
                 return
             self.settings = ProviderSettings(base_url=base_url, model=model, api_key=api_key)
             self.compact_provider.configure(text=self._provider_status())
             self._set_all_status(self._provider_status())
-            dialog.destroy()
+            close_dialog()
 
-        self._button(actions, "CANCEL", dialog.destroy, bg=COLORS["panel_alt"]).pack(
+        self._button(actions, "CANCEL", close_dialog, bg=COLORS["panel_alt"]).pack(
             side="right", padx=(6, 0)
         )
         self._button(actions, "APPLY FOR THIS SESSION", apply_settings, bg=COLORS["accent"]).pack(
             side="right"
         )
+
+    def _start_model_lookup(
+        self,
+        fields: dict[str, Any],
+        status: tk.StringVar,
+        button: tk.Button,
+    ) -> None:
+        base_url = fields["base_url"].get().strip().rstrip("/")
+        api_key = fields["api_key"].get().strip()
+        if not base_url.startswith(("https://", "http://")):
+            status.set("Base URL must start with http:// or https://")
+            return
+        if not api_key and "api.openai.com" in base_url:
+            status.set("Enter your API key first")
+            return
+        button.configure(state="disabled")
+        status.set("Loading available model IDs…")
+        threading.Thread(
+            target=self._request_model_list,
+            args=(base_url, api_key),
+            name="bloodborne-copilot-model-list",
+            daemon=True,
+        ).start()
+
+    def _request_model_list(self, base_url: str, api_key: str) -> None:
+        try:
+            client = OpenAICompatibleClient(base_url, "", api_key)
+            self.model_result_queue.put((client.list_models(), None))
+        except Exception as exc:
+            self.model_result_queue.put((None, str(exc)))
+
+    def _finish_model_lookup(self, models: list[str] | None, error: str | None) -> None:
+        ui = self.model_lookup_ui
+        if not ui:
+            return
+        try:
+            if not ui["dialog"].winfo_exists():
+                return
+            ui["button"].configure(state="normal")
+            if error:
+                ui["status"].set(f"Could not load models: {error}")
+            elif not models:
+                ui["combo"].configure(values=())
+                ui["status"].set("The endpoint returned no model IDs; type one manually")
+            else:
+                ui["combo"].configure(values=tuple(models))
+                ui["status"].set(
+                    f"Loaded {len(models)} model IDs. Some may not support chat completions."
+                )
+        except tk.TclError:
+            self.model_lookup_ui = None
 
     def _set_all_status(self, text: str) -> None:
         for widgets in self.chat_widgets.values():
@@ -467,6 +559,12 @@ class CopilotOverlay:
             self._set_busy(False)
             self._set_all_status("Ready" if not error else "Check provider settings or connection")
             self._render_chat()
+        while True:
+            try:
+                models, model_error = self.model_result_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._finish_model_lookup(models, model_error)
         if self.running:
             self.root.after(120, self._poll_results)
 
