@@ -1,6 +1,6 @@
-# Bloodborne Copilot Overlay
+# Bloodborne Copilot Desktop App
 
-A dependency-free Windows MVP for a small, draggable, always-on-top companion panel. It is a separate read-only app; it does not inject into Bloodborne, send game inputs, capture the screen, or call an AI service.
+A dependency-free Windows companion with two views and an OpenAI-compatible text chat. It runs separately from Bloodborne and never injects into the game or sends game inputs.
 
 ## Run
 
@@ -10,27 +10,43 @@ From the repository root, using Python with Tkinter enabled:
 python -m apps.overlay
 ```
 
-Optionally load one save snapshot at launch:
+Or start directly in full view:
+
+```powershell
+python -m apps.overlay --full
+```
+
+Optionally load a `userdata000X` save snapshot at startup:
 
 ```powershell
 python -m apps.overlay --save "C:\path\to\userdata0000"
 ```
 
-Or choose **LOAD SAVE SNAPSHOT** in the panel. Select a `userdata000X` file; the reader opens it once and does not monitor or modify it.
+Or use **LOAD SAVE** in the app. The selected save is opened once, read-only; do not select a file while the game may be writing it.
 
-## Controls
+## Views
 
-- Drag the title text to move the panel.
-- **PINNED** toggles always-on-top behavior.
-- **×** or `Esc` closes the panel.
-- **LOAD SAVE SNAPSHOT** opens a file picker.
+- **Compact:** small, frameless, semi-transparent, draggable, and pinned on top by default. It includes a conversation transcript, text entry, **BUILD**, **BOSS**, and **NEXT** quick prompts, plus buttons to open the full view and provider settings.
+- **Full:** normal resizable Windows window with a larger chat and a hunter snapshot sidebar. Use the title bar to maximize it, move it to another monitor, or switch to it with Alt+Tab. **COMPACT** returns to the floating view.
 
-## What it shows
+The quick prompts are designed for information the app can actually use: build guidance from loaded stats, spoiler-light boss preparation after the user names a boss, and route help after the user supplies their current area and goal. The app does not know the live area or current boss yet.
 
-Character name and level, six stats, saved HP/stamina, Blood Echoes/Insight, experimental boss-flag count, and raw inventory-candidate counts. Inventory IDs are not translated into names. Boss flags and inventory markers are experimental; treat them as hints, not authoritative progression data.
+## AI provider setup
 
-All displayed save values are a **snapshot**, not live telemetry. Do not load a save while the game may be writing it. The overlay does not yet observe gameplay or produce contextual AI advice.
+Open **SET** in compact view or **SETTINGS** in full view. The client uses the OpenAI-compatible `POST /chat/completions` endpoint and supports a configurable base URL, model, and API key. The default base URL is `https://api.openai.com/v1`; the model is editable. Compatible services can use their own base URL and model, including local endpoints.
 
-## Display limitations
+Alternatively, set these environment variables before launching:
 
-The panel is borderless and semi-transparent. It should stay above ordinary windows and borderless-windowed games; exclusive fullscreen can cover it. Interacting with the panel may take keyboard/mouse focus from the game, so loading the save before play or keeping the panel on a second monitor is recommended.
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL` (defaults to `https://api.openai.com/v1`)
+- `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
+
+The API key field is masked. A key entered in Settings remains in memory for the current run only and is not saved to disk or the repository. Chat history is also session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint reference: [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
+
+## Snapshot and limitations
+
+The sidebar shows character/level, six stats, saved HP/stamina, Blood Echoes/Insight, experimental boss-flag count, and raw item/armor candidate counts. Inventory IDs are not resolved to names; boss flags and marker classifications are not authoritative progression data.
+
+All save values are a persistent **snapshot**, not live telemetry. The app does not capture the game screen, monitor save changes, or provide real-time AI vision. The system prompt explicitly tells the assistant not to infer current area, boss, equipped weapon, or live HP from the save. It favors concise, spoiler-light answers in Brazilian Portuguese.
+
+The compact view is designed to stay above ordinary windows and borderless-windowed games; exclusive fullscreen can cover it. Clicking chat controls may take keyboard/mouse focus from the game. The full view is a regular Alt+Tab window and is not always-on-top.
