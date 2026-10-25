@@ -21,6 +21,7 @@ from apps.overlay.chat_client import (
 from apps.overlay.providers import (
     PROVIDERS,
     PROVIDER_LABELS,
+    api_family_for_model,
     filter_models_for_provider,
 )
 from apps.overlay.settings_store import SettingsStore, SettingsStoreError
@@ -503,9 +504,10 @@ class CopilotOverlay:
         tk.Label(
             body,
             text=(
-                "SAVE SETTINGS stores provider keys encrypted for this Windows user. OpenCode Go's "
-                "model list is filtered to Chat Completions models supported by this app; its terms "
-                "expect coding-agent-style traffic, so check whether this game companion qualifies."
+                "SAVE SETTINGS stores provider keys encrypted for this Windows user. OpenCode Go "
+                "puts free previews and low-cost options first; Muse Contributor models may use "
+                "prompts and completions for Meta training and are region-limited. OpenCode Go "
+                "expects coding-agent-style traffic, so check whether this companion qualifies."
             ),
             bg=COLORS["background"], fg=COLORS["dim"], font=("Segoe UI", 8),
             justify="left", wraplength=500, anchor="w",
@@ -640,7 +642,7 @@ class CopilotOverlay:
                 ui["combo"].configure(values=tuple(models))
                 provider_id = PROVIDER_LABELS.get(ui["fields"]["provider"].get(), "custom")
                 if provider_id == "opencode_go":
-                    message = f"Loaded {len(models)} OpenCode Go Chat Completions models"
+                    message = f"Loaded {len(models)} supported OpenCode Go models; free first"
                 else:
                     message = f"Loaded {len(models)} model IDs; some may not support chat completions"
                 ui["status"].set(message)
@@ -692,6 +694,12 @@ class CopilotOverlay:
             self.chat_widgets[source_mode]["status"].set("Set provider details in Settings")
             return
         preset = PROVIDERS.get(self.settings.provider, PROVIDERS["custom"])
+        api_family = api_family_for_model(self.settings.provider, self.settings.model)
+        if api_family is None:
+            self.chat_widgets[source_mode]["status"].set(
+                "This model's API family is not supported by this app"
+            )
+            return
         if preset.requires_api_key and not self.settings.api_key:
             self.chat_widgets[source_mode]["status"].set("Add an API key in Settings")
             return
@@ -722,11 +730,15 @@ class CopilotOverlay:
                     "User-Agent": "BloodborneCopilot/0.1",
                     "X-OpenCode-Session": self.conversation_id,
                 }
+            api_family = api_family_for_model(settings.provider, settings.model)
+            if api_family is None:
+                raise ValueError("This model's API family is not supported by this app")
             client = OpenAICompatibleClient(
                 settings.base_url,
                 settings.model,
                 settings.api_key,
                 extra_headers=headers,
+                api_family=api_family,
             )
             self.result_queue.put((client.complete(messages), None))
         except Exception as exc:

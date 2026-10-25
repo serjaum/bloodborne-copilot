@@ -116,6 +116,55 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         self.assertEqual(_TestHandler.opencode_session, "stable-session-id")
         self.assertEqual(_TestHandler.user_agent, "BloodborneCopilot/0.1")
 
+    def test_posts_to_responses_api_and_extracts_output_text(self):
+        class Handler(BaseHTTPRequestHandler):
+            request_path = None
+            payload = None
+
+            def do_POST(self):
+                type(self).request_path = self.path
+                size = int(self.headers.get("Content-Length", "0"))
+                type(self).payload = json.loads(self.rfile.read(size))
+                body = json.dumps({
+                    "output": [{
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Muse response"}],
+                    }],
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        client = OpenAICompatibleClient(
+            base_url=f"http://127.0.0.1:{server.server_port}/zen/go/v1",
+            model="muse-spark-1.3-contributor",
+            api_key="local-test-key",
+            api_family="responses",
+        )
+        messages = [
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "What should I try?"},
+        ]
+
+        self.assertEqual(client.complete(messages), "Muse response")
+        self.assertEqual(Handler.request_path, "/zen/go/v1/responses")
+        payload = Handler.payload or {}
+        self.assertEqual(payload.get("model"), "muse-spark-1.3-contributor")
+        self.assertEqual(payload.get("input"), [
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "What should I try?"},
+        ])
+
     def test_surfaces_provider_error_message_from_non_openai_error_schema(self):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):

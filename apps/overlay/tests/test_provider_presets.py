@@ -1,6 +1,10 @@
 import unittest
 
-from apps.overlay.providers import PROVIDERS, filter_models_for_provider
+from apps.overlay.providers import (
+    PROVIDERS,
+    api_family_for_model,
+    filter_models_for_provider,
+)
 
 
 class ProviderPresetTests(unittest.TestCase):
@@ -21,14 +25,53 @@ class ProviderPresetTests(unittest.TestCase):
         self.assertIn("glm-5.3", PROVIDERS["opencode_go"].chat_models or ())
         self.assertNotIn("gpt-6-luna", PROVIDERS["opencode_go"].chat_models or ())
 
-    def test_opencode_go_model_list_only_offers_chat_completions_models(self):
+    def test_opencode_go_model_list_only_offers_supported_api_models(self):
         available = ["gpt-6-luna", "glm-5.3", "claude-haiku-5-5", "kimi-k3"]
 
         self.assertEqual(
             filter_models_for_provider("opencode_go", available),
-            ["glm-5.3", "kimi-k3"],
+            [
+                "space-bunny-free",
+                "longcat-2.5-preview-free",
+                "glm-5.3",
+                "gpt-6-luna",
+                "kimi-k3",
+            ],
         )
         self.assertEqual(filter_models_for_provider("openai", available), available)
+
+    def test_opencode_go_model_filter_includes_responses_and_free_chat_models(self):
+        available = [
+            "gpt-6-luna",
+            "glm-5.3",
+            "claude-haiku-5-5",
+            "muse-spark-1.3-contributor",
+            "space-bunny-free",
+            "longcat-2.5-preview-free",
+        ]
+
+        self.assertEqual(
+            filter_models_for_provider("opencode_go", available),
+            [
+                "space-bunny-free",
+                "longcat-2.5-preview-free",
+                "muse-spark-1.3-contributor",
+                "glm-5.3",
+                "gpt-6-luna",
+            ],
+        )
+        self.assertEqual(
+            api_family_for_model("opencode_go", "muse-spark-1.3-contributor"),
+            "responses",
+        )
+        self.assertEqual(
+            api_family_for_model("opencode_go", "space-bunny-free"),
+            "chat_completions",
+        )
+        self.assertIsNone(api_family_for_model("opencode_go", "claude-haiku-5-5"))
+        supplemented = filter_models_for_provider("opencode_go", ["glm-5.3"])
+        self.assertIn("longcat-2.5-preview-free", supplemented)
+        self.assertIn("space-bunny-free", supplemented)
 
     def test_custom_openai_compatible_provider_remains_available(self):
         self.assertEqual(PROVIDERS["custom"].label, "Custom / OpenAI-compatible")

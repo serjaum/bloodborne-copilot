@@ -88,6 +88,7 @@ class OpenAICompatibleClient:
         timeout: float = 45.0,
         models_url: str | None = None,
         extra_headers: dict[str, str] | None = None,
+        api_family: str = "chat_completions",
     ) -> None:
         self.base_url = base_url.strip().rstrip("/")
         self.model = model.strip()
@@ -95,6 +96,7 @@ class OpenAICompatibleClient:
         self.timeout = timeout
         self.models_url = models_url.strip().rstrip("/") if models_url else ""
         self.extra_headers = dict(extra_headers or {})
+        self.api_family = api_family
 
     def complete(self, messages: list[dict[str, str]]) -> str:
         if not self.base_url.startswith(("https://", "http://")):
@@ -102,15 +104,29 @@ class OpenAICompatibleClient:
         if not self.model:
             raise ValueError("Enter a model name in Settings")
 
+        if self.api_family not in {"chat_completions", "responses"}:
+            raise ValueError(f"Unsupported provider API family: {self.api_family}")
+        route = "responses" if self.api_family == "responses" else "chat/completions"
         endpoint = (
             self.base_url
-            if self.base_url.endswith("/chat/completions")
-            else f"{self.base_url}/chat/completions"
+            if self.base_url.endswith(f"/{route}")
+            else f"{self.base_url}/{route}"
         )
         headers = {"Content-Type": "application/json", **self.extra_headers}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = json.dumps({"model": self.model, "messages": messages}).encode("utf-8")
+        if self.api_family == "responses":
+            input_messages = [
+                {
+                    "role": message.get("role", "user"),
+                    "content": message.get("content", ""),
+                }
+                for message in messages
+            ]
+            request_payload = {"model": self.model, "input": input_messages}
+        else:
+            request_payload = {"model": self.model, "messages": messages}
+        body = json.dumps(request_payload).encode("utf-8")
         request = Request(endpoint, data=body, headers=headers, method="POST")
 
         try:
@@ -123,6 +139,8 @@ class OpenAICompatibleClient:
         except TimeoutError:
             raise RuntimeError("Provider request timed out") from None
 
+        if self.api_family == "responses":
+            return self._extract_responses_text(payload)
         try:
             content = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
@@ -135,6 +153,28 @@ class OpenAICompatibleClient:
             if result:
                 return result
         raise RuntimeError("Provider returned an empty or unsupported chat message")
+
+    @staticmethod
+    def _extract_responses_text(payload: Any) -> str:
+        if isinstance(payload, dict):
+            direct_text = payload.get("output_text")
+            if isinstance(direct_text, str) and direct_text.strip():
+                return direct_text.strip()
+            output = payload.get("output", [])
+            if isinstance(output, list):
+                text_parts = [
+                    part["text"]
+                    for item in output
+                    if isinstance(item, dict) and isinstance(item.get("content"), list)
+                    for part in item["content"]
+                    if isinstance(part, dict)
+                    and part.get("type") == "output_text"
+                    and isinstance(part.get("text"), str)
+                ]
+                result = "".join(text_parts).strip()
+                if result:
+                    return result
+        raise RuntimeError("Provider response did not contain Responses API output text")
 
     def list_models(self) -> list[str]:
         """Fetch model IDs from the OpenAI-compatible GET /models endpoint."""
