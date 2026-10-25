@@ -1,19 +1,25 @@
 import json
+import os
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
 
-from apps.overlay.chat_client import OpenAICompatibleClient
+from apps.overlay.chat_client import OpenAICompatibleClient, ProviderSettings
 
 
 class _TestHandler(BaseHTTPRequestHandler):
     request_path = None
     authorization = None
     payload = None
+    opencode_session = None
+    user_agent = None
 
     def do_POST(self):
         type(self).request_path = self.path
         type(self).authorization = self.headers.get("Authorization")
+        type(self).opencode_session = self.headers.get("X-OpenCode-Session")
+        type(self).user_agent = self.headers.get("User-Agent")
         size = int(self.headers.get("Content-Length", "0"))
         type(self).payload = json.loads(self.rfile.read(size))
         response = json.dumps({
@@ -47,6 +53,20 @@ class _TestHandler(BaseHTTPRequestHandler):
 
 
 class OpenAICompatibleClientTests(unittest.TestCase):
+    def test_opencode_environment_uses_its_own_key_and_model(self):
+        with patch.dict(os.environ, {
+            "COPILOT_PROVIDER": "opencode_go",
+            "OPENAI_API_KEY": "openai-key-not-for-opencode",
+            "OPENCODE_GO_API_KEY": "opencode-go-test-key",
+            "OPENCODE_GO_MODEL": "kimi-k3",
+        }, clear=True):
+            settings = ProviderSettings.from_environment()
+
+        self.assertEqual(settings.provider, "opencode_go")
+        self.assertEqual(settings.base_url, "https://opencode.ai/inference/go/openai/v1")
+        self.assertEqual(settings.model, "kimi-k3")
+        self.assertEqual(settings.api_key, "opencode-go-test-key")
+
     def test_posts_chat_completion_to_configured_compatible_endpoint(self):
         _TestHandler.request_path = None
         _TestHandler.authorization = None
@@ -72,6 +92,30 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         self.assertEqual(_TestHandler.payload["model"], "test-model")
         self.assertEqual(_TestHandler.payload["messages"], messages)
 
+    def test_sends_configured_opencode_session_headers(self):
+        _TestHandler.request_path = None
+        _TestHandler.opencode_session = None
+        _TestHandler.user_agent = None
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _TestHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        client = OpenAICompatibleClient(
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            model="glm-5.3",
+            api_key="local-test-key",
+            extra_headers={
+                "X-OpenCode-Session": "stable-session-id",
+                "User-Agent": "BloodborneCopilot/0.1",
+            },
+        )
+
+        client.complete([{"role": "user", "content": "Test"}])
+
+        self.assertEqual(_TestHandler.opencode_session, "stable-session-id")
+        self.assertEqual(_TestHandler.user_agent, "BloodborneCopilot/0.1")
+
     def test_lists_model_ids_from_configured_compatible_endpoint(self):
         _TestHandler.request_path = None
         _TestHandler.authorization = None
@@ -92,6 +136,25 @@ class OpenAICompatibleClientTests(unittest.TestCase):
         self.assertEqual(models, ["embedding-model", "model-a", "model-z"])
         self.assertEqual(_TestHandler.request_path, "/v1/models")
         self.assertEqual(_TestHandler.authorization, "Bearer test-key-not-a-real-secret")
+
+    def test_uses_provider_specific_model_list_url_when_configured(self):
+        _TestHandler.request_path = None
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _TestHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        models_url = f"http://127.0.0.1:{server.server_port}/inference/go/v1/models"
+        client = OpenAICompatibleClient(
+            base_url=f"http://127.0.0.1:{server.server_port}/inference/go/openai/v1",
+            model="glm-5.3",
+            api_key="local-test-key",
+            models_url=models_url,
+        )
+
+        client.list_models()
+
+        self.assertEqual(_TestHandler.request_path, "/inference/go/v1/models")
 
 
 if __name__ == "__main__":

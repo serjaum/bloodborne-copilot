@@ -8,7 +8,7 @@ import json
 import os
 from ctypes import wintypes
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class _DataBlob(ctypes.Structure):
@@ -112,34 +112,71 @@ class SettingsStore:
         self.path = path or default_settings_path()
         self.protector = protector or WindowsDpapiProtector()
 
-    def load(self) -> dict[str, str]:
+    def load(self) -> dict[str, Any]:
         if not self.path.exists():
             return {}
         try:
             document = json.loads(self.path.read_text(encoding="utf-8"))
-            encrypted_text = document.get("api_key_protected", "")
-            encrypted_key = base64.b64decode(encrypted_text, validate=True) if encrypted_text else b""
-            api_key = self.protector.unprotect(encrypted_key).decode("utf-8") if encrypted_key else ""
+            if not isinstance(document, dict):
+                raise ValueError("Settings document must be an object")
+            provider = str(document.get("provider", "openai"))
+            protected_keys = document.get("api_keys_protected", {})
+            if not isinstance(protected_keys, dict):
+                raise ValueError("Protected API keys must be an object")
+            api_keys = {
+                str(provider_id): self.protector.unprotect(
+                    base64.b64decode(encrypted_text, validate=True)
+                ).decode("utf-8")
+                for provider_id, encrypted_text in protected_keys.items()
+                if isinstance(encrypted_text, str) and encrypted_text
+            }
+            legacy_key = document.get("api_key_protected", "")
+            if legacy_key and provider not in api_keys:
+                encrypted_key = base64.b64decode(legacy_key, validate=True)
+                api_keys[provider] = self.protector.unprotect(encrypted_key).decode("utf-8")
             return {
-                "provider": str(document.get("provider", "openai")),
+                "provider": provider,
                 "base_url": str(document.get("base_url", "")),
                 "model": str(document.get("model", "")),
-                "api_key": api_key,
+                "api_key": api_keys.get(provider, ""),
+                "api_keys": api_keys,
             }
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise SettingsStoreError(
                 "Saved provider settings could not be read or decrypted"
             ) from exc
 
-    def save(self, settings: dict[str, str]) -> None:
-        api_key = settings.get("api_key", "")
+    def save(self, settings: dict[str, Any]) -> None:
+        provider = str(settings.get("provider", "openai"))
+        api_key = str(settings.get("api_key", ""))
         try:
-            encrypted_key = self.protector.protect(api_key.encode("utf-8")) if api_key else b""
+            existing = self.load()
+            api_keys: dict[str, str] = dict(existing.get("api_keys", {}))
+            requested_keys = settings.get("api_keys", {})
+            if isinstance(requested_keys, dict):
+                for provider_id, key in requested_keys.items():
+                    if not isinstance(provider_id, str) or not isinstance(key, str):
+                        continue
+                    if key:
+                        api_keys[provider_id] = key
+                    else:
+                        api_keys.pop(provider_id, None)
+            if api_key:
+                api_keys[provider] = api_key
+            else:
+                api_keys.pop(provider, None)
+            protected_keys = {
+                provider_id: base64.b64encode(
+                    self.protector.protect(key.encode("utf-8"))
+                ).decode("ascii")
+                for provider_id, key in api_keys.items()
+                if key
+            }
             document = {
-                "provider": settings.get("provider", "openai"),
+                "provider": provider,
                 "base_url": settings.get("base_url", ""),
                 "model": settings.get("model", ""),
-                "api_key_protected": base64.b64encode(encrypted_key).decode("ascii"),
+                "api_keys_protected": protected_keys,
             }
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary_path = self.path.with_suffix(self.path.suffix + ".tmp")

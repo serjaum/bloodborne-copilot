@@ -7,6 +7,7 @@ import os
 import queue
 import threading
 import tkinter as tk
+import uuid
 from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Any
@@ -16,6 +17,11 @@ from apps.overlay.chat_client import (
     OpenAICompatibleClient,
     ProviderSettings,
     build_system_prompt,
+)
+from apps.overlay.providers import (
+    PROVIDERS,
+    PROVIDER_LABELS,
+    filter_models_for_provider,
 )
 from apps.overlay.settings_store import SettingsStore, SettingsStoreError
 from apps.overlay.snapshot import build_snapshot
@@ -38,6 +44,7 @@ class CopilotOverlay:
         self.pinned = True
         self.running = True
         self.drag_origin: tuple[int, int, int, int] | None = None
+        self.conversation_id = str(uuid.uuid4())
         self.settings_store = SettingsStore()
         self.settings_load_error = False
         try:
@@ -46,17 +53,42 @@ class CopilotOverlay:
             saved_settings = {}
             self.settings_load_error = True
         environment_settings = ProviderSettings.from_environment()
-        self.settings = ProviderSettings(
-            base_url=os.environ.get(
+        provider = os.environ.get("COPILOT_PROVIDER", "").strip().lower()
+        if not provider:
+            provider = saved_settings.get("provider", environment_settings.provider)
+        if provider not in PROVIDERS:
+            provider = "custom"
+        saved_api_keys = {
+            str(provider_id): str(api_key)
+            for provider_id, api_key in saved_settings.get("api_keys", {}).items()
+            if isinstance(api_key, str)
+        }
+        stored_provider = str(saved_settings.get("provider", "openai"))
+        legacy_api_key = saved_settings.get("api_key", "")
+        if isinstance(legacy_api_key, str) and legacy_api_key:
+            saved_api_keys.setdefault(stored_provider, legacy_api_key)
+        preset = PROVIDERS[provider]
+        api_key_env = "OPENCODE_GO_API_KEY" if provider == "opencode_go" else "OPENAI_API_KEY"
+        model_env = "OPENCODE_GO_MODEL" if provider == "opencode_go" else "OPENAI_MODEL"
+        base_url = (
+            preset.base_url if provider != "custom"
+            else os.environ.get(
                 "OPENAI_BASE_URL", saved_settings.get("base_url", environment_settings.base_url)
-            ).strip(),
-            model=os.environ.get(
-                "OPENAI_MODEL", saved_settings.get("model", environment_settings.model)
-            ).strip(),
-            api_key=os.environ.get(
-                "OPENAI_API_KEY", saved_settings.get("api_key", environment_settings.api_key)
-            ).strip(),
+            )
         )
+        self.settings = ProviderSettings(
+            base_url=str(base_url).strip(),
+            model=str(os.environ.get(
+                model_env,
+                saved_settings.get("model", preset.default_model or environment_settings.model),
+            )).strip(),
+            api_key=os.environ.get(api_key_env, "").strip()
+            or saved_api_keys.get(provider, ""),
+            provider=provider,
+        )
+        self.saved_api_keys = saved_api_keys
+        if self.settings.api_key:
+            self.saved_api_keys.setdefault(provider, self.settings.api_key)
         self.snapshot: dict[str, str] | None = None
         self.snapshot_filename = ""
         self.history: list[dict[str, str]] = []
@@ -74,7 +106,7 @@ class CopilotOverlay:
         self._build_compact_view()
         self._build_full_view()
         self.show_compact()
-        self.root.after(120, self._poll_results)
+        self.poll_after_id: str | None = self.root.after(120, self._poll_results)
         if self.settings_load_error:
             self._set_all_status("Saved provider settings could not be decrypted; enter them again")
 
@@ -335,11 +367,12 @@ class CopilotOverlay:
         self.pin_button.configure(text="PINNED" if self.pinned else "FLOAT")
 
     def _provider_status(self) -> str:
+        provider = PROVIDERS.get(self.settings.provider, PROVIDERS["custom"])
         if self.settings.api_key:
-            return f"API ready · {self.settings.model}"
-        if "api.openai.com" in self.settings.base_url:
-            return "API key needed · open Settings"
-        return f"No key set · {self.settings.model}"
+            return f"{provider.label} ready · {self.settings.model}"
+        if provider.requires_api_key:
+            return f"{provider.label} key needed · open Settings"
+        return f"{provider.label} no key · {self.settings.model}"
 
     def open_settings(self) -> None:
         dialog = tk.Toplevel(self.root)
@@ -348,18 +381,47 @@ class CopilotOverlay:
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
-        dialog.geometry("540x450")
+        dialog.geometry("560x520")
         body = tk.Frame(dialog, bg=COLORS["background"], padx=18, pady=16)
         body.pack(fill="both", expand=True)
         tk.Label(
-            body, text="OPENAI-COMPATIBLE PROVIDER", bg=COLORS["background"],
+            body, text="AI PROVIDER", bg=COLORS["background"],
             fg=COLORS["text"], font=("Segoe UI", 11, "bold"), anchor="w",
         ).pack(fill="x", pady=(0, 12))
 
         fields: dict[str, Any] = {}
+        selected_provider_id = (
+            self.settings.provider if self.settings.provider in PROVIDERS else "custom"
+        )
+        selected_provider = {
+            "id": selected_provider_id,
+            "custom_base_url": self.settings.base_url if selected_provider_id == "custom" else "",
+        }
+        selected_preset = PROVIDERS[selected_provider_id]
+        provider_row = tk.Frame(body, bg=COLORS["background"])
+        provider_row.pack(fill="x", pady=(0, 6))
+        tk.Label(
+            provider_row, text="Provider", bg=COLORS["background"], fg=COLORS["muted"],
+            font=("Segoe UI", 9), anchor="w",
+        ).pack(side="left")
+        provider_combo = ttk.Combobox(
+            provider_row,
+            state="readonly",
+            values=tuple(preset.label for preset in PROVIDERS.values()),
+            font=("Segoe UI", 9),
+            width=32,
+        )
+        provider_combo.set(selected_preset.label)
+        provider_combo.pack(side="right")
+        fields["provider"] = provider_combo
+
         for label, key, value in (
-            ("Base URL", "base_url", self.settings.base_url),
-            ("API key", "api_key", self.settings.api_key),
+            (
+                "Base URL",
+                "base_url",
+                selected_preset.base_url if selected_provider_id != "custom" else self.settings.base_url,
+            ),
+            ("API key", "api_key", self.saved_api_keys.get(selected_provider_id, self.settings.api_key)),
         ):
             tk.Label(
                 body, text=label, bg=COLORS["background"], fg=COLORS["muted"],
@@ -371,6 +433,8 @@ class CopilotOverlay:
                 show="*" if key == "api_key" else "",
             )
             entry.insert(0, value)
+            if key == "base_url" and selected_provider_id != "custom":
+                entry.configure(state="readonly")
             entry.pack(fill="x", ipady=7)
             fields[key] = entry
 
@@ -389,7 +453,7 @@ class CopilotOverlay:
         )
         load_models_button.pack(side="right")
         model_combo = ttk.Combobox(body, state="normal", font=("Segoe UI", 9))
-        model_combo.set(self.settings.model)
+        model_combo.set(self.settings.model or selected_preset.default_model)
         model_combo.pack(fill="x", ipady=3)
         fields["model"] = model_combo
         tk.Label(
@@ -404,12 +468,44 @@ class CopilotOverlay:
             "fields": fields,
         }
 
+        def on_provider_changed(_event: Any = None) -> None:
+            previous_provider_id = selected_provider["id"]
+            new_provider_id = PROVIDER_LABELS.get(provider_combo.get(), "custom")
+            new_preset = PROVIDERS[new_provider_id]
+            old_api_key = fields["api_key"].get().strip()
+            if old_api_key:
+                self.saved_api_keys[previous_provider_id] = old_api_key
+            else:
+                self.saved_api_keys.pop(previous_provider_id, None)
+            base_url_entry = fields["base_url"]
+            if previous_provider_id == "custom":
+                selected_provider["custom_base_url"] = base_url_entry.get().strip()
+            new_base_url = (
+                new_preset.base_url if new_provider_id != "custom"
+                else selected_provider.get("custom_base_url", "")
+            )
+            base_url_entry.configure(state="normal")
+            base_url_entry.delete(0, "end")
+            base_url_entry.insert(0, new_base_url)
+            base_url_entry.configure(state="normal" if new_provider_id == "custom" else "readonly")
+            api_key_entry = fields["api_key"]
+            api_key_entry.delete(0, "end")
+            api_key_entry.insert(0, self.saved_api_keys.get(new_provider_id, ""))
+            model_combo.set(new_preset.default_model)
+            model_status.set(
+                "Enter a base URL and model ID" if new_provider_id == "custom"
+                else f"Provider endpoint selected: {new_preset.label}"
+            )
+            selected_provider["id"] = new_provider_id
+
+        provider_combo.bind("<<ComboboxSelected>>", on_provider_changed)
+
         tk.Label(
             body,
             text=(
-                "The API key is saved encrypted for this Windows user and restored when the app reopens. "
-                "Model discovery uses the provider's GET /models endpoint; some compatible services "
-                "may not implement it."
+                "SAVE SETTINGS stores provider keys encrypted for this Windows user. OpenCode Go's "
+                "model list is filtered to Chat Completions models supported by this app; its terms "
+                "expect coding-agent-style traffic, so check whether this game companion qualifies."
             ),
             bg=COLORS["background"], fg=COLORS["dim"], font=("Segoe UI", 8),
             justify="left", wraplength=500, anchor="w",
@@ -424,7 +520,12 @@ class CopilotOverlay:
         dialog.protocol("WM_DELETE_WINDOW", close_dialog)
 
         def apply_settings() -> None:
-            base_url = fields["base_url"].get().strip().rstrip("/")
+            provider_id = PROVIDER_LABELS.get(fields["provider"].get(), "custom")
+            preset = PROVIDERS[provider_id]
+            base_url = (
+                preset.base_url if provider_id != "custom"
+                else fields["base_url"].get().strip().rstrip("/")
+            )
             model = fields["model"].get().strip()
             api_key = fields["api_key"].get().strip()
             if not base_url.startswith(("https://", "http://")):
@@ -433,18 +534,27 @@ class CopilotOverlay:
             if not model:
                 model_status.set("Enter a model name in Settings")
                 return
+            api_keys_to_save = dict(self.saved_api_keys)
+            if api_key:
+                api_keys_to_save[provider_id] = api_key
+            else:
+                api_keys_to_save.pop(provider_id, None)
             try:
                 self.settings_store.save({
-                    "provider": "openai",
+                    "provider": provider_id,
                     "base_url": base_url,
                     "model": model,
                     "api_key": api_key,
+                    "api_keys": api_keys_to_save,
                 })
             except SettingsStoreError:
                 model_status.set("Could not save encrypted settings; changes were not applied")
                 return
             self.settings_load_error = False
-            self.settings = ProviderSettings(base_url=base_url, model=model, api_key=api_key)
+            self.saved_api_keys = api_keys_to_save
+            self.settings = ProviderSettings(
+                base_url=base_url, model=model, api_key=api_key, provider=provider_id
+            )
             self.compact_provider.configure(text=self._provider_status())
             self._set_all_status(self._provider_status())
             close_dialog()
@@ -465,27 +575,41 @@ class CopilotOverlay:
         status: tk.StringVar,
         button: tk.Button,
     ) -> None:
-        base_url = fields["base_url"].get().strip().rstrip("/")
+        provider_id = PROVIDER_LABELS.get(fields["provider"].get(), "custom")
+        preset = PROVIDERS[provider_id]
+        base_url = (
+            preset.base_url if provider_id != "custom"
+            else fields["base_url"].get().strip().rstrip("/")
+        )
         api_key = fields["api_key"].get().strip()
         if not base_url.startswith(("https://", "http://")):
             status.set("Base URL must start with http:// or https://")
             return
-        if not api_key and "api.openai.com" in base_url:
-            status.set("Enter your API key first")
+        if preset.requires_api_key and not api_key:
+            status.set(f"Enter the {preset.label} API key first")
             return
         button.configure(state="disabled")
-        status.set("Loading available model IDs…")
+        status.set("Loading available Chat Completions model IDs…")
         threading.Thread(
             target=self._request_model_list,
-            args=(base_url, api_key),
+            args=(base_url, api_key, preset.models_url, provider_id),
             name="bloodborne-copilot-model-list",
             daemon=True,
         ).start()
 
-    def _request_model_list(self, base_url: str, api_key: str) -> None:
+    def _request_model_list(
+        self,
+        base_url: str,
+        api_key: str,
+        models_url: str | None,
+        provider_id: str,
+    ) -> None:
         try:
-            client = OpenAICompatibleClient(base_url, "", api_key)
-            self.model_result_queue.put((client.list_models(), None))
+            client = OpenAICompatibleClient(
+                base_url, "", api_key, models_url=models_url
+            )
+            models = filter_models_for_provider(provider_id, client.list_models())
+            self.model_result_queue.put((models, None))
         except Exception as exc:
             self.model_result_queue.put((None, str(exc)))
 
@@ -504,9 +628,12 @@ class CopilotOverlay:
                 ui["status"].set("The endpoint returned no model IDs; type one manually")
             else:
                 ui["combo"].configure(values=tuple(models))
-                ui["status"].set(
-                    f"Loaded {len(models)} model IDs. Some may not support chat completions."
-                )
+                provider_id = PROVIDER_LABELS.get(ui["fields"]["provider"].get(), "custom")
+                if provider_id == "opencode_go":
+                    message = f"Loaded {len(models)} OpenCode Go Chat Completions models"
+                else:
+                    message = f"Loaded {len(models)} model IDs; some may not support chat completions"
+                ui["status"].set(message)
         except tk.TclError:
             self.model_lookup_ui = None
 
@@ -554,7 +681,8 @@ class CopilotOverlay:
         if not self.settings.model or not self.settings.base_url:
             self.chat_widgets[source_mode]["status"].set("Set provider details in Settings")
             return
-        if not self.settings.api_key and "api.openai.com" in self.settings.base_url:
+        preset = PROVIDERS.get(self.settings.provider, PROVIDERS["custom"])
+        if preset.requires_api_key and not self.settings.api_key:
             self.chat_widgets[source_mode]["status"].set("Add an API key in Settings")
             return
         self.history.append({"role": "user", "content": text})
@@ -578,12 +706,24 @@ class CopilotOverlay:
         self, messages: list[dict[str, str]], settings: ProviderSettings,
     ) -> None:
         try:
-            client = OpenAICompatibleClient(settings.base_url, settings.model, settings.api_key)
+            headers = {}
+            if settings.provider == "opencode_go":
+                headers = {
+                    "User-Agent": "BloodborneCopilot/0.1",
+                    "X-OpenCode-Session": self.conversation_id,
+                }
+            client = OpenAICompatibleClient(
+                settings.base_url,
+                settings.model,
+                settings.api_key,
+                extra_headers=headers,
+            )
             self.result_queue.put((client.complete(messages), None))
         except Exception as exc:
             self.result_queue.put((None, str(exc)))
 
     def _poll_results(self) -> None:
+        self.poll_after_id = None
         while True:
             try:
                 response, error = self.result_queue.get_nowait()
@@ -604,7 +744,7 @@ class CopilotOverlay:
                 break
             self._finish_model_lookup(models, model_error)
         if self.running:
-            self.root.after(120, self._poll_results)
+            self.poll_after_id = self.root.after(120, self._poll_results)
 
     def _set_busy(self, busy: bool) -> None:
         for widgets in self.chat_widgets.values():
@@ -639,6 +779,12 @@ class CopilotOverlay:
 
     def close(self) -> None:
         self.running = False
+        if self.poll_after_id is not None:
+            try:
+                self.root.after_cancel(self.poll_after_id)
+            except tk.TclError:
+                pass
+            self.poll_after_id = None
         self.root.destroy()
 
 

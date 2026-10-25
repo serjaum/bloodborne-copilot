@@ -9,6 +9,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from apps.overlay.providers import PROVIDERS
+
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -34,13 +36,26 @@ class ProviderSettings:
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
     api_key: str = ""
+    provider: str = "openai"
 
     @classmethod
     def from_environment(cls) -> "ProviderSettings":
+        provider = os.environ.get("COPILOT_PROVIDER", "").strip().lower()
+        if not provider:
+            provider = "custom" if "OPENAI_BASE_URL" in os.environ else "openai"
+        if provider == "opencode_go":
+            preset = PROVIDERS[provider]
+            return cls(
+                base_url=preset.base_url,
+                model=os.environ.get("OPENCODE_GO_MODEL", preset.default_model).strip(),
+                api_key=os.environ.get("OPENCODE_GO_API_KEY", "").strip(),
+                provider=provider,
+            )
         return cls(
             base_url=os.environ.get("OPENAI_BASE_URL", DEFAULT_BASE_URL).strip(),
             model=os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip(),
             api_key=os.environ.get("OPENAI_API_KEY", "").strip(),
+            provider=provider,
         )
 
 
@@ -51,11 +66,15 @@ class OpenAICompatibleClient:
         model: str,
         api_key: str = "",
         timeout: float = 45.0,
+        models_url: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self.base_url = base_url.strip().rstrip("/")
         self.model = model.strip()
         self.api_key = api_key.strip()
         self.timeout = timeout
+        self.models_url = models_url.strip().rstrip("/") if models_url else ""
+        self.extra_headers = dict(extra_headers or {})
 
     def complete(self, messages: list[dict[str, str]]) -> str:
         if not self.base_url.startswith(("https://", "http://")):
@@ -68,7 +87,7 @@ class OpenAICompatibleClient:
             if self.base_url.endswith("/chat/completions")
             else f"{self.base_url}/chat/completions"
         )
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", **self.extra_headers}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         body = json.dumps({"model": self.model, "messages": messages}).encode("utf-8")
@@ -108,7 +127,7 @@ class OpenAICompatibleClient:
         """Fetch model IDs from the OpenAI-compatible GET /models endpoint."""
         if not self.base_url.startswith(("https://", "http://")):
             raise ValueError("Provider URL must start with http:// or https://")
-        endpoint = (
+        endpoint = self.models_url or (
             self.base_url
             if self.base_url.endswith("/models")
             else f"{self.base_url}/models"

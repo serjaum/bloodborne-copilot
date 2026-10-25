@@ -33,15 +33,18 @@ The quick prompts are designed for information the app can actually use: build g
 
 ## AI provider setup
 
-Open **SET** in compact view or **SETTINGS** in full view. The client uses the OpenAI-compatible `POST /chat/completions` endpoint and supports a configurable base URL, model, and API key. The default base URL is `https://api.openai.com/v1`; the model is editable. Select **LOAD MODELS** after entering the provider URL and key to request its `GET /models` list, then choose an ID or type one manually. Compatible services can use their own base URL and model, including local endpoints, but model-list support is provider-specific. A listed model may not support chat completions.
+Choose **OpenAI**, **OpenCode Go**, or **Custom / OpenAI-compatible** in Settings; the first two fill their documented API URLs automatically. The app uses OpenAI Chat Completions. **LOAD MODELS** fetches the provider's model list and offers selectable models; OpenCode Go results are filtered to models documented as using Chat Completions. OpenCode Go uses a separate model-list route from its chat route. This app sends the required `x-opencode-session` conversation ID and identifies itself with its own user agent. OpenCode Go documentation says it is intended primarily for coding agents and expects coding-agent-style traffic; this game companion may not fit that intended use. Check its current terms before using it. OpenCode Go API reference: [Go models and endpoints](https://opencode.ai/v2/docs/console/go).
 
 Alternatively, set these environment variables before launching:
 
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` (defaults to `https://api.openai.com/v1`)
-- `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
+- `COPILOT_PROVIDER` (`openai`, `opencode_go`, or `custom`; a saved provider is used when unset)
+- `OPENAI_API_KEY` and `OPENAI_MODEL` (defaults to `gpt-4o-mini`) for OpenAI or custom providers
+- `OPENAI_BASE_URL` (defaults to `https://api.openai.com/v1`) when using `custom`
+- `OPENCODE_GO_API_KEY` and `OPENCODE_GO_MODEL` (defaults to `glm-5.3`) for OpenCode Go
 
-The API key field is masked. On Windows, **SAVE SETTINGS** stores the API key encrypted with DPAPI for the current Windows user in `%LOCALAPPDATA%\BloodborneCopilot\settings.json`; it is restored when the app reopens and is not written in plaintext. Chat history is still session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint references: [List models](https://developers.openai.com/api/reference/resources/models/methods/list/) and [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
+Environment keys and model names apply only to their matching provider. The built-in OpenAI and OpenCode Go URLs are fixed; `OPENAI_BASE_URL` is editable only for the custom provider.
+
+The API key field is masked. Enter a key for each provider you plan to test and click **SAVE SETTINGS** once; all keys entered in that dialog are stored separately. On Windows, keys are encrypted with DPAPI for the current Windows user in `%LOCALAPPDATA%\BloodborneCopilot\settings.json`, restored per provider on reopen, and never written in plaintext. Chat history is still session-only. The selected provider receives the user's chat and the small parsed summary (if loaded); the save file and raw inventory records are not uploaded. Review the provider's data policy before use. OpenAI endpoint references: [List models](https://developers.openai.com/api/reference/resources/models/methods/list/) and [Create chat completion](https://platform.openai.com/docs/api-reference/chat/create).
 
 ## Snapshot and limitations
 
