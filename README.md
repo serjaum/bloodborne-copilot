@@ -14,7 +14,7 @@ Currently reports the character name, level, six attributes, Blood Echoes, Insig
 
 ## Desktop app (compact overlay + full window)
 
-The Windows companion has a translucent, always-on-top compact chat and a regular resizable full view for Alt+Tab or a second monitor. It can load one read-only save snapshot; it does not observe live gameplay yet. Run it with:
+The Windows companion has a translucent, always-on-top compact chat and a regular resizable full view for Alt+Tab or a second monitor. Provider settings now use the app's dark palette, including the model dropdown; API-key fields remain masked. It can load one read-only save snapshot; it does not observe live gameplay yet. Run it with:
 
 ```powershell
 python -m apps.overlay

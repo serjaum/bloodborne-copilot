@@ -28,6 +28,7 @@ Or use **LOAD SAVE** in the app. The selected save is opened once, read-only; do
 
 - **Compact:** small, frameless, semi-transparent, draggable, and pinned on top by default. It includes a conversation transcript, text entry, **BUILD**, **BOSS**, and **NEXT** quick prompts, plus buttons to open the full view and provider settings.
 - **Full:** normal resizable Windows window with a larger chat and a hunter snapshot sidebar. Use the title bar to maximize it, move it to another monitor, or switch to it with Alt+Tab. **COMPACT** returns to the floating view.
+- **Settings:** provider/model controls use the same dark palette as the app; dropdown menus and read-only endpoint fields stay readable, while API keys remain masked.
 
 The quick prompts are designed for information the app can actually use: build guidance from loaded stats, spoiler-light boss preparation after the user names a boss, and route help after the user supplies their current area and goal. The app does not know the live area or current boss yet.
 

@@ -35,6 +35,73 @@ COLORS = {
     "muted": "#a7a9b1", "dim": "#727783", "border": "#343a48",
     "user": "#f0b6a9", "assistant": "#d8dce5", "error": "#ff8f8f",
 }
+
+
+def _configure_settings_combobox(root: tk.Misc, combo: ttk.Combobox) -> None:
+    style = ttk.Style(root)
+    if "clam" in style.theme_names() and style.theme_use() != "clam":
+        style.theme_use("clam")
+    style.configure(
+        "Copilot.TCombobox",
+        fieldbackground=COLORS["panel_alt"],
+        background=COLORS["panel_alt"],
+        foreground=COLORS["text"],
+        arrowcolor=COLORS["muted"],
+        bordercolor=COLORS["border"],
+        lightcolor=COLORS["border"],
+        darkcolor=COLORS["border"],
+        arrowsize=14,
+        padding=(8, 6),
+    )
+    style.map(
+        "Copilot.TCombobox",
+        fieldbackground=[
+            ("readonly", COLORS["panel_alt"]),
+            ("!disabled", COLORS["panel_alt"]),
+        ],
+        foreground=[("disabled", COLORS["dim"]), ("!disabled", COLORS["text"])],
+        selectbackground=[("!disabled", COLORS["accent"])],
+        selectforeground=[("!disabled", COLORS["text"])],
+    )
+    combo.configure(style="Copilot.TCombobox")
+    try:
+        popdown = combo.tk.eval(f"ttk::combobox::PopdownWindow {combo}")
+        combo.tk.call(
+            f"{popdown}.f.l",
+            "configure",
+            "-background", COLORS["panel_alt"],
+            "-foreground", COLORS["text"],
+            "-selectbackground", COLORS["accent"],
+            "-selectforeground", COLORS["text"],
+            "-activestyle", "none",
+            "-relief", "flat",
+            "-borderwidth", 0,
+            "-highlightthickness", 0,
+            "-font", ("Segoe UI", 9),
+        )
+    except tk.TclError:
+        pass
+
+
+def _style_settings_entry(entry: tk.Entry, read_only: bool = False) -> None:
+    entry.configure(
+        background=COLORS["panel_alt"],
+        foreground=COLORS["text"],
+        insertbackground=COLORS["text"],
+        selectbackground=COLORS["accent"],
+        selectforeground=COLORS["text"],
+        relief="flat",
+        borderwidth=0,
+        highlightthickness=1,
+        highlightbackground=COLORS["border"],
+        highlightcolor=COLORS["accent"],
+        disabledbackground=COLORS["panel_alt"],
+        disabledforeground=COLORS["dim"],
+    )
+    if read_only:
+        entry.configure(readonlybackground=COLORS["panel_alt"])
+
+
 QUICK_LABELS = {"Build": "BUILD", "Boss": "BOSS", "Next step": "NEXT"}
 
 
@@ -382,7 +449,7 @@ class CopilotOverlay:
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
-        dialog.geometry("560x520")
+        dialog.geometry("560x460")
         body = tk.Frame(dialog, bg=COLORS["background"], padx=18, pady=16)
         body.pack(fill="both", expand=True)
         tk.Label(
@@ -412,6 +479,7 @@ class CopilotOverlay:
             font=("Segoe UI", 9),
             width=32,
         )
+        _configure_settings_combobox(dialog, provider_combo)
         provider_combo.set(selected_preset.label)
         provider_combo.pack(side="right")
         fields["provider"] = provider_combo
@@ -433,8 +501,10 @@ class CopilotOverlay:
                 insertbackground=COLORS["text"], relief="flat", font=("Segoe UI", 9),
                 show="*" if key == "api_key" else "",
             )
+            read_only = key == "base_url" and selected_provider_id != "custom"
+            _style_settings_entry(entry, read_only=read_only)
             entry.insert(0, value)
-            if key == "base_url" and selected_provider_id != "custom":
+            if read_only:
                 entry.configure(state="readonly")
             entry.pack(fill="x", ipady=7)
             fields[key] = entry
@@ -454,6 +524,7 @@ class CopilotOverlay:
         )
         load_models_button.pack(side="right")
         model_combo = ttk.Combobox(body, state="normal", font=("Segoe UI", 9))
+        _configure_settings_combobox(dialog, model_combo)
         model_combo.set(self.settings.model or selected_preset.default_model)
         model_combo.pack(fill="x", ipady=3)
         fields["model"] = model_combo
